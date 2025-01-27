@@ -41,57 +41,63 @@
 
 ;; cloudflare --------
 
+(defn cloudflare-request
+  [{:keys [method url body]}]
+  (-> @(http/request {:method method
+                      :url (str "https://api.cloudflare.com/client/v4" url)
+                      :headers {"Authorization" (str "Bearer " (config :cloudflare-token))
+                                "Accept" "application/json"}
+                      :body body})
+      :body
+      (json/parse-string keyword)))
+
 (defn cloudflare-get-zone-id [domain]
   ;; https://developers.cloudflare.com/api/resources/zones/methods/list/
-  (-> @(http/request {:method :get
-                      :url (str "https://api.cloudflare.com/client/v4/zones")
-                      :headers {"Authorization" (str "Bearer " (config :cloudflare-token))
-                                "Accept" "application/json"}})
-      :body
-      (json/parse-string keyword)
-      :result
-      (->> (filter (fn [x]
-                     (= domain (:name x))))
-           first
-           :id)))
+  (->> (cloudflare-request {:method :get
+                            :url "/zones"})
+       :result
+       (filter (fn [x]
+                 (= domain (:name x))))
+       first
+       :id))
 
 #_(cloudflare-get-zone-id "clojure.camp")
 
 (defn cloudflare-get-dns-records []
   ;; https://developers.cloudflare.com/api/resources/dns/subresources/records/methods/list/
-  (-> @(http/request {:method :get
-                      :url (str "https://api.cloudflare.com/client/v4/zones/" (config :cloudflare-zone-id) "/dns_records")
-                      :headers {"Authorization" (str "Bearer " (config :cloudflare-token))
-                                "Accept" "application/json"}})
-      :body
-      (json/parse-string keyword)
+  (->> (cloudflare-request {:method :get
+                            :url (str "/zones/" (config :cloudflare-zone-id) "/dns_records")})
       :result))
+
+#_(cloudflare-get-dns-records)
 
 (defn cloudflare-set-dns-record!
   [record-id ip]
-  (-> @(http/request {:method :patch
-                      :url (str "https://api.cloudflare.com/client/v4/zones/" (config :cloudflare-zone-id) "/dns_records/" record-id)
-                      :headers {"Authorization" (str "Bearer " (config :cloudflare-token))
-                                "Accept" "application/json"}
-                      :body (json/generate-string
-                             {:content ip})})
-      :body
-      (json/parse-string keyword)
-      :result))
+  (->> (cloudflare-request {:method :patch
+                            :url (str "/zones/" (config :cloudflare-zone-id) "/dns_records/" record-id)
+                            :body (json/generate-string {:content ip})})
+       :result))
 
 ;; linode ----------
 
+(defn linode-request
+  [{:keys [method url body]}]
+  (-> @(http/request {:method method
+                      :url (str "https://api.linode.com/v4" url)
+                      :headers {"authorization" (str "Bearer " (config :linode-token))
+                                "accept" "application/json"
+                                "content-type" "application/json"}
+                      :body body})
+      :body
+      (json/parse-string keyword)))
+
 (defn linode-list-regions []
   ;; https://techdocs.akamai.com/linode-api/reference/get-regions
-  (-> @(http/request {:method :get
-                      :url "https://api.linode.com/v4/regions"
-                      :headers {"authorization" (str "Bearer " (config :linode-token))
-                                "accept" "application/json"}})
-      :body
-      (json/parse-string keyword)
-      :data
-      ;; {:label "..." :id "..."}
-      ))
+  (->> (linode-request {:method :get
+                        :url "/regions"})
+       :data
+       ;; {:label "..." :id "..."}
+       ))
 
 #_(->> (linode-list-regions)
        (filter #(= "Toronto, CA" (:label %)))
@@ -100,15 +106,11 @@
 
 (defn linode-list-types []
   ;; https://techdocs.akamai.com/linode-api/reference/get-linode-types
-  (-> @(http/request {:method :get
-                      :url "https://api.linode.com/v4/linode/types"
-                      :headers {"authorization" (str "Bearer " (config :linode-token))
-                                "accept" "application/json"}})
-      :body
-      (json/parse-string keyword)
-      :data
-      ;; {:label "..." :id "..."}
-      ))
+  (->> (linode-request {:method :get
+                        :url "/linode/types"})
+       :data
+       ;; {:label "..." :id "..."}
+       ))
 
 #_(->> (linode-list-types)
        (filter #(= "Linode 16GB" (:label %)))
@@ -117,86 +119,71 @@
 
 (defn linode-get-images []
   ;; https://techdocs.akamai.com/linode-api/reference/get-images
-  (-> @(http/request {:method :get
-                      :url "https://api.linode.com/v4/images"
-                      :headers {"authorization" (str "Bearer " (config :linode-token))
-                                "accept" "application/json"}})
-      :body
-      (json/parse-string keyword)
-      :data
-      (->> (remove :is_public))
-      ;; {:label "..." :updated "..."}
-      ))
+  (->> (linode-request {:method :get
+                        :url "/images"})
+
+       :data
+       (remove :is_public)
+       ;; {:label "..." :updated "..."}
+       ))
 
 #_(linode-get-images)
 
 (defn linode-get-instances []
   ;; https://techdocs.akamai.com/linode-api/reference/get-linode-instances
-  (-> @(http/request {:method :get
-                      :url "https://api.linode.com/v4/linode/instances"
-                      :headers {"authorization" (str "Bearer " (config :linode-token))
-                                "accept" "application/json"}})
-      :body
-      (json/parse-string keyword)
-      :data
-      ;; {:id ..., ...}
-      ))
-
-(defn linode-create-instance! [{:keys [image region type root-pass]}]
-  ;; https://techdocs.akamai.com/linode-api/reference/post-linode-instance
-  @(http/request {:method :post
-                  :url "https://api.linode.com/v4/linode/instances"
-                  :headers {"content-type" "application/json"
-                            "authorization" (str "Bearer " (config :linode-token))}
-                  :body (json/generate-string
-                         {:image image
-                          :type type
-                          :root_pass root-pass
-                          :region region})}))
-
-(defn linode-get-disks [linode-id]
-  (-> @(http/request {:method :get
-                      :url (str "https://api.linode.com/v4/linode/instances/" linode-id "/disks")
-                      :headers {"authorization" (str "Bearer " (config :linode-token))
-                                "accept" "application/json"}})
-      :body
-      (json/parse-string keyword)
-      :data
-      ;; {:id ..., ...}
-      ))
+  (->> (linode-request {:method :get
+                        :url "/linode/instances"})
+       :data
+       ;; {:id ..., ...}
+       ))
 
 #_(linode-get-instances)
 
+(defn linode-create-instance! [{:keys [image region type root-pass]}]
+  ;; https://techdocs.akamai.com/linode-api/reference/post-linode-instance
+  (linode-request {:method :post
+                   :url "/linode/instances"
+                   :body (json/generate-string
+                          {:image image
+                           :type type
+                           :root_pass root-pass
+                           :region region})}))
+
+(defn linode-get-disks [linode-id]
+  ;; https://techdocs.akamai.com/linode-api/reference/get-linode-disks
+  (->> (linode-request {:method :Get
+                        :url (str "/linode/instances/" linode-id "/disks")})
+      :data
+      ;; {:id ..., ...}
+      ))
+
 (defn linode-shutdown-instance! [instance-id]
-  @(http/request {:method :post
-                  :url (str "https://api.linode.com/v4/linode/instances/" instance-id "/shutdown")
-                  :headers {"authorization" (str "Bearer " (config :linode-token))}}))
+  ;; https://techdocs.akamai.com/linode-api/reference/post-shutdown-linode-instance
+  (linode-request {:method :post
+                   :url (str "/linode/instances/" instance-id "/shutdown")}))
 
 (defn linode-delete-instance! [instance-id]
   ;; https://techdocs.akamai.com/linode-api/reference/delete-linode-instance
-  @(http/request {:method :delete
-                  :url (str "https://api.linode.com/v4/linode/instances/" instance-id)
-                  :headers {"authorization" (str "Bearer " (config :linode-token))}}))
+  (linode-request {:method :delete
+                   :url (str "/linode/instances/" instance-id)}))
 
 (defn linode-create-image!
   [disk-id description]
   ;; https://techdocs.akamai.com/linode-api/reference/post-image
-  @(http/request {:method :post
-                  :url "https://api.linode.com/v4/images"
-                  :headers {"content-type" "application/json"
-                            "authorization" (str "Bearer " (config :linode-token))}
-                  :body (json/generate-string
-                         {:disk_id disk-id
-                          :description (str description)
-                          :label (str "mob-"
-                                      (.format (java.time.format.DateTimeFormatter/ofPattern "yyyy-MM-dd'T'HH-mm")
-                                               (java.time.ZonedDateTime/now)))})}))
+  (linode-request {:method :post
+                   :url "/images"
+                   :body (json/generate-string
+                          {:disk_id disk-id
+                           :description (str description)
+                           :label (str "mob-"
+                                       (.format (java.time.format.DateTimeFormatter/ofPattern "yyyy-MM-dd'T'HH-mm")
+                                                (java.time.ZonedDateTime/now)))})}))
 
 (defn linode-delete-image!
   [image-id]
-  @(http/request {:method :delete
-                  :url (str "https://api.linode.com/v4/images/" image-id)
-                  :headers {"authorization" (str "Bearer " (config :linode-token))}}))
+  ;; https://techdocs.akamai.com/linode-api/reference/delete-image
+  (linode-request {:method :delete
+                   :url (str "/images/" image-id)}))
 
 ;; mob utility functions --------
 ;; (can have mob specific functions here)
