@@ -2,7 +2,6 @@
 
 ;; secrets -------
 
-;; https://dash.cloudflare.com/profile/api-tokens
 (defn config [k]
   (-> "config.edn"
       slurp
@@ -13,6 +12,7 @@
 
 ;; expects:
 ;;  :cloudflare-token
+;;    https://dash.cloudflare.com/profile/api-tokens
 ;;  :cloudflare-zone-id
 ;;    find using cloudflare-zone-id below
 ;;  :linode-token
