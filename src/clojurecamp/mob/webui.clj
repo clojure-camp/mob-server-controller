@@ -1,14 +1,40 @@
 (ns clojurecamp.mob.webui
   (:require
+   [clojure.pprint :as pprint]
    [huff2.core :as h]
    [org.httpkit.server :as http]
-   [clojurecamp.mob.log :refer [log!]]
+   [clojurecamp.mob.log :refer [log! get-log]]
    [clojurecamp.mob.orchestration :refer [mob-progress
                                           ->mob-state
                                           mob-can-start?
                                           mob-can-stop?]]))
 
-(defn page []
+(defn log-page []
+  [:div
+   [:h2 "Log"]
+   [:table
+    [:tbody
+     (for [log-entry (->> (get-log)
+                          (sort-by :time)
+                          reverse
+                          (take 100))]
+       [:tr
+        [:td [:code (str (:time log-entry))]]
+        [:td [:code (str (:event-type log-entry))]]
+        [:td
+         (if (:extra-info log-entry)
+           [:details
+            [:summary (pr-str (:main-info log-entry))]
+            [:code {:style {:width "50em"
+                            :display "block"
+                            :overflow-x "auto"}}
+             ;; slow
+             [:pre
+              (with-out-str
+                (pprint/pprint (:extra-info log-entry)))]]]
+           [:div (pr-str (:main-info log-entry))])]])]]])
+
+(defn main-page []
   (let [progress (mob-progress)
         state (->mob-state progress)]
     [:html
@@ -30,28 +56,8 @@
           [:tr
            [:td (name label)]
            [:td (if status "✅" "❌")]])]]
-      #_[:div
-       [:h2 "Log"]
-       [:table
-        [:tbody
-         (for [log-entry (->> (get-log)
-                              (sort-by :time)
-                              reverse
-                              (take 100))]
-           [:tr
-            [:td [:code (str (:time log-entry))]]
-            [:td [:code (:event-type log-entry)]]
-            [:td
-             (if (:extra-info log-entry)
-               [:details
-                [:summary (pr-str (:main-info log-entry))]
-                [:code
-                 (pr-str (:extra-info log-entry))
-                 ;; slow
-                 [:pre
-                  #_(with-out-str
-                     (clojure.pprint/pprint (:extra-info log-entry)))]]]
-               [:div (pr-str (:main-info log-entry))])]])]]]
+      [:div
+       [:a {:href "/logs"} "logs"]]
       [:script
        ;; auto refresh page
        (when (not (or (mob-can-start? state)
@@ -60,18 +66,31 @@
 
 (defn handler [req]
   (cond
-    (= "/" (:uri req))
+    (and
+      (= "/" (:uri req))
+      (= :get (:request-method req)))
     {:status 200
      :headers {"Content-Type" "text/html; charset=utf-8"}
-     :body (str (h/html (page)))}
+     :body (str (h/html (main-page)))}
 
-    (= "/start" (:uri req))
+    (and
+      (= "/logs" (:uri req))
+      (= :get (:request-method req)))
+    {:status 200
+     :headers {"Content-Type" "text/html; charset=utf-8"}
+     :body (str (h/html (log-page)))}
+
+    (and
+      (= "/start" (:uri req))
+      (= :post (:request-method req)))
     (do
       (log! :message "START")
       #_(mob-start!)
       {:status 200})
 
-    (= "/stop" (:uri req))
+    (and
+      (= "/stop" (:uri req))
+      (= :post (:request-method req)))
     (do
       (log! :message "STOP")
       #_(mob-stop!)
