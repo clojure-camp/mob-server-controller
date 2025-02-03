@@ -1,4 +1,10 @@
-(require '[org.httpkit.client :as http])
+(ns clojurecamp.mob.core
+  (:require
+   [clojure.string :as str]
+   [clojure.java.io :as io]
+   [cheshire.core :as json]
+   [org.httpkit.client :as http]
+   [huff2.core :as h]))
 
 ;; secrets -------
 
@@ -20,15 +26,19 @@
 
 ;; logging --------
 
-(defn log! [data]
+(defn log! [event-type & [main-info extra-info]]
   (with-open [wrtr (io/writer "log.txt" :append true)]
     (.write wrtr (str (pr-str {:time (str (java.time.ZonedDateTime/now))
-                          :data data}) "\n"))))
-
-(defn print-log []
+                               :event-type event-type
+                               :main-info main-info
+                               :extra-info extra-info}) "\n"))))
+(defn get-log []
   (->> (slurp "log.txt")
        str/split-lines
-       (map read-string)
+       (map read-string)))
+
+(defn print-log []
+  (->> (get-log)
        (map #(select-keys % [:time :data]))
        clojure.pprint/print-table))
 
@@ -37,19 +47,41 @@
 
 #_(clear-log!)
 #_(print-log)
-#_(log! "test")
+#_(log! :test "test")
+#_(log! :test "test" {:extra "info"})
+
+;; utility web request ------
+
+(defn http-request
+  [{:keys [method url oauth-token body]}]
+  (log! :http-request {:method method
+                       :url url
+                       :body body})
+  (-> @(http/request {:method method
+                       :url url
+                       :oauth-token oauth-token
+                       :headers {;"Authorization" (str "Bearer " (config :cloudflare-token))
+                                 "Content-Type" "application/json"
+                                 "Accept" "application/json"}
+                       :body body})
+       ((fn [response]
+          (log! :http-response
+                {:status (:status response)}
+                (-> response
+                    ;; don't want to log oauth-token
+                    (dissoc :opts)))
+          response))
+       :body
+       (json/parse-string keyword)))
 
 ;; cloudflare --------
 
 (defn cloudflare-request
   [{:keys [method url body]}]
-  (-> @(http/request {:method method
-                      :url (str "https://api.cloudflare.com/client/v4" url)
-                      :headers {"Authorization" (str "Bearer " (config :cloudflare-token))
-                                "Accept" "application/json"}
-                      :body body})
-      :body
-      (json/parse-string keyword)))
+  (http-request {:method method
+                 :url (str "https://api.cloudflare.com/client/v4" url)
+                 :oauth-token (config :cloudflare-token)
+                 :body body}))
 
 (defn cloudflare-get-zone-id [domain]
   ;; https://developers.cloudflare.com/api/resources/zones/methods/list/
@@ -82,14 +114,10 @@
 
 (defn linode-request
   [{:keys [method url body]}]
-  (-> @(http/request {:method method
-                      :url (str "https://api.linode.com/v4" url)
-                      :headers {"authorization" (str "Bearer " (config :linode-token))
-                                "accept" "application/json"
-                                "content-type" "application/json"}
-                      :body body})
-      :body
-      (json/parse-string keyword)))
+  (http-request {:method method
+                 :url (str "https://api.linode.com/v4" url)
+                 :oauth-token (config :linode-token)
+                 :body body}))
 
 (defn linode-list-regions []
   ;; https://techdocs.akamai.com/linode-api/reference/get-regions
@@ -101,6 +129,10 @@
 
 #_(->> (linode-list-regions)
        (filter #(= "Toronto, CA" (:label %)))
+       first
+       :id)
+#_(->> (linode-list-regions)
+       (filter #(= "Frankfurt, DE" (:label %)))
        first
        :id)
 
@@ -151,7 +183,7 @@
 
 (defn linode-get-disks [linode-id]
   ;; https://techdocs.akamai.com/linode-api/reference/get-linode-disks
-  (->> (linode-request {:method :Get
+  (->> (linode-request {:method :get
                         :url (str "/linode/instances/" linode-id "/disks")})
       :data
       ;; {:id ..., ...}
@@ -207,9 +239,10 @@
        last))
 
 (defn mob-create-instance! []
+  (log! :fn "mob-create-instance!")
   (linode-create-instance! {:image (:id (mob-get-latest-image))
                             :type "g6-standard-6"
-                            :region "ca-central"
+                            :region "ca-central" ;; "eu-central"
                             ;; we don't ssh in, so use a random password
                             ;; if things go wrong, can use the virtual terminal from the linode UI
                             :root-pass (str (random-uuid))}))
@@ -217,6 +250,7 @@
 #_(mob-create-instance!)
 
 (defn mob-imagize-disk! []
+  (log! :fn "mob-imagize-disk!")
   (let [instance-id (:id (mob-get-instance))
         disk-id (->> (linode-get-disks instance-id)
                      (filter (fn [disk]
@@ -228,6 +262,7 @@
 #_(mob-imagize-disk!)
 
 (defn mob-shutdown-instance! []
+  (log! :fn "mob-shutdown-instance!")
   (linode-shutdown-instance! (:id (mob-get-instance))))
 
 #_(mob-shutdown-instance!)
@@ -235,6 +270,7 @@
 #_(mob-get-instance)
 
 (defn mob-delete-instance! []
+  (log! :fn "mob-delete-instance!")
   (linode-delete-instance! (:id (mob-get-instance))))
 
 #_(mob-delete-instance!)
@@ -255,6 +291,7 @@
 (defn mob-trim-images!
   "Removes images, except: ones marked 'keepme' and the latest image"
   []
+  (log! :fn "mob-trim-images!")
   (doseq [image (mob-images-to-delete)]
     (linode-delete-image! (:id image))))
 
@@ -273,6 +310,7 @@
 #_(mob-get-dns-record)
 
 (defn mob-set-dns-record-ip! [ip]
+  (log! :fn "mob-set-dns-record-ip!" {:ip ip})
   (cloudflare-set-dns-record! (:id (mob-get-dns-record))
                               ip))
 
@@ -408,24 +446,26 @@
 
 #_(mob-state)
 
+(defn mob-can-start? [state]
+  (= :mob.progress/system-offline state))
+
 (defn mob-start! []
-  (log! "mob-start!")
-  (if (= :mob.progress/system-offline (mob-state))
-    (do
-      (log! "mob-create-instance!")
-      (mob-create-instance!))
-    (log! "(already starting)"))
+  (log! :fn "mob-start!")
+  (if (mob-can-start? (mob-state))
+    (mob-create-instance!)
+    (log! :msg "(already starting)"))
   ;; polling-logic! does the rest:
   ;;   set dns ip
   )
 
+(defn mob-can-stop? [state]
+  (= :mob.progress/system-online state))
+
 (defn mob-stop! []
-  (log! "mob-stop!")
-  (if (= :mob.progress/system-online (mob-state))
-    (do
-      (log! "mob-shutdown-instance!")
-      (mob-shutdown-instance!))
-    (log! "(already stopping)"))
+  (log! :fn "mob-stop!")
+  (if (mob-can-stop? (mob-state))
+    (mob-shutdown-instance!)
+    (log! :msg "(already stopping)"))
   ;; polling-logic! does the rest:
   ;;   stop server
   ;;   create image
@@ -439,45 +479,28 @@
     ;; start
     ;; create-instance! is not here, because it is manually triggered
     :mob.progress/server-started
-    (do
-      (log! "mob-set-dns-record-ip!")
-      (mob-set-dns-record-ip! (first (:ipv4 (mob-get-instance)))))
+    (mob-set-dns-record-ip! (first (:ipv4 (mob-get-instance))))
 
     ;; shutdown
     ;; shutdown-instance! is not here, because it is manually triggered
     :mob.progress/server-stopped
-    (do
-      (log! "mob-imagize-disk!")
-      (mob-imagize-disk!))
+    (mob-imagize-disk!)
     :mob.progress/image-created
-    (do
-       (log! "mob-trim-images!")
-       (mob-trim-images!))
+    (mob-trim-images!)
     :mob.progress/images-trimmed
-    (do
-      (log! "mob-delete-instance!")
-      (mob-delete-instance!))
+    (mob-delete-instance!)
 
     nil))
-
-;; html
-
-(defn page []
-  (let [progress (mob-progress)]
-    [:body
-     [:table
-      [:tbody
-       (for [[label status] progress]
-         [:tr
-          [:td (name label)]
-          [:td (if status "✅" "❌")]])]]]))
 
 ;; "cron" --------
 
 (def latest-future (atom nil))
 
 (defn tick! [f t]
-  (f)
+  (try
+    (f)
+    (catch Exception e
+      (log! :exception nil (pr-str e))))
   (reset! latest-future
           ;; TODO should deref?
           (future
@@ -488,13 +511,95 @@
 
 #_(future-cancel @latest-future)
 
+;; html
+
+(defn page []
+  (let [progress (mob-progress)
+        state (->mob-state progress)]
+    [:html
+     [:head
+      [:title "Clojure Camp - Mob Server Controller"]]
+     [:body
+      (cond
+        (mob-can-start? state)
+        [:button {:onclick "fetch('/start', {method: 'POST'}).then(() => location.reload())"} "Start"]
+        (mob-can-stop? state)
+        [:button {:onclick "fetch('/stop', {method: 'POST'}).then(() => location.reload())"} "Stop"]
+        :else
+        "Doing stuff...")
+      [:div
+       [:pre (pr-str state)]]
+      [:table
+       [:tbody
+        (for [[label status] progress]
+          [:tr
+           [:td (name label)]
+           [:td (if status "✅" "❌")]])]]
+      #_[:div
+       [:h2 "Log"]
+       [:table
+        [:tbody
+         (for [log-entry (->> (get-log)
+                              (sort-by :time)
+                              reverse
+                              (take 100))]
+           [:tr
+            [:td [:code (str (:time log-entry))]]
+            [:td [:code (:event-type log-entry)]]
+            [:td
+             (if (:extra-info log-entry)
+               [:details
+                [:summary (pr-str (:main-info log-entry))]
+                [:code
+                 (pr-str (:extra-info log-entry))
+                 ;; slow
+                 [:pre
+                  #_(with-out-str
+                     (clojure.pprint/pprint (:extra-info log-entry)))]]]
+               [:div (pr-str (:main-info log-entry))])]])]]]
+      [:script
+       ;; auto refresh page
+       (when (not (or (mob-can-start? state)
+                      (mob-can-stop? state)))
+         "setInterval(() => location.reload(), 15000);")]]]))
+
+(defn handler [req]
+  (cond
+    (= "/" (:uri req))
+    {:status 200
+     :headers {"Content-Type" "text/html; charset=utf-8"}
+     :body (str (h/html (page)))}
+
+    (= "/start" (:uri req))
+    (do
+      (log! :message "START")
+      #_(mob-start!)
+      {:status 200})
+
+    (= "/stop" (:uri req))
+    (do
+      (log! :message "STOP")
+      #_(mob-stop!)
+      {:status 200})))
+
+(require '[org.httpkit.server :as httpk])
+
+(defonce server (atom nil))
+
+(defn start-server! []
+  (when @server
+    (@server))
+  (reset! server (httpk/run-server #'handler {:port 9624})))
+
+#_(start-server!)
+
 ;; ----------------
 
 ;; automatic
 
 (defn do-stuff! []
   (let [p (mob-progress)]
-    (log! (->mob-state p))
+    (log! :state (->mob-state p))
     (polling-logic! p)))
 
 ;; should run slower than every 5s
@@ -519,12 +624,3 @@
   ;; (wait)
   (mob-trim-images!)
   (mob-delete-instance!))
-
-;; TODO
-;;   start! and stop! should set a polling-active? atom
-;;   when this script is run, set value of polling-active? based on a request to mob-state
-;;   pull secrets from config.edn
-;;   UI
-;;   ability to specify locale for launch
-;;   multiple namespaces
-
