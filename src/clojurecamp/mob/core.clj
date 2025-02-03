@@ -20,7 +20,7 @@
   (webui/start-server!))
 
 (comment
-  (mob-start!)
+  (mob-start! "ca-central")
   (mob-stop!)
   (print-log))
 
@@ -28,7 +28,7 @@
 
 (comment
   ;; start
-  (mob-create-instance!)
+  (mob-create-instance! "ca-central")
   (mob-set-dns-record-ip! (first (:ipv4 (mob-get-instance))))
 
   ;; stop

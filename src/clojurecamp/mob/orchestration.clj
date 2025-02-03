@@ -33,16 +33,16 @@
        (sort-by :created)
        last))
 
-(defn mob-create-instance! []
-  (log! :fn "mob-create-instance!")
+(defn mob-create-instance! [region]
+  (log! :fn "mob-create-instance!" {:region region})
   (linode-create-instance! {:image (:id (mob-get-latest-image))
                             :type "g6-standard-6"
-                            :region "ca-central" ;; "eu-central"
+                            :region region ;; "ca-central" "eu-central"
                             ;; we don't ssh in, so use a random password
                             ;; if things go wrong, can use the virtual terminal from the linode UI
                             :root-pass (str (random-uuid))}))
 
-#_(mob-create-instance!)
+#_(mob-create-instance! "ca-central")
 
 (defn mob-imagize-disk! []
   (log! :fn "mob-imagize-disk!")
@@ -245,10 +245,10 @@
 (defn mob-can-start? [state]
   (= :mob.progress/system-offline state))
 
-(defn mob-start! []
-  (log! :fn "mob-start!")
+(defn mob-start! [region]
+  (log! :fn "mob-start!" {:region region})
   (if (mob-can-start? (mob-state))
-    (mob-create-instance!)
+    (mob-create-instance! region)
     (log! :msg "(already starting)"))
   ;; polling-logic! does the rest:
   ;;   set dns ip

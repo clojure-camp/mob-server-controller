@@ -7,7 +7,8 @@
    [clojurecamp.mob.orchestration :refer [mob-progress
                                           ->mob-state
                                           mob-can-start?
-                                          mob-can-stop?]]))
+                                          mob-can-stop?]
+    :as orch]))
 
 (defn log-page []
   [:div
@@ -43,7 +44,10 @@
      [:body
       (cond
         (mob-can-start? state)
-        [:button {:onclick "fetch('/start', {method: 'POST'}).then(() => location.reload())"} "Start"]
+        [:<>
+         [:button {:onclick "fetch('/start/north-america', {method: 'POST'}).then(() => location.reload())"} "Start (in North America)"]
+         [:br]
+         [:button {:onclick "fetch('/start/europe', {method: 'POST'}).then(() => location.reload())"} "Start (in Europe)"]]
         (mob-can-stop? state)
         [:button {:onclick "fetch('/stop', {method: 'POST'}).then(() => location.reload())"} "Stop"]
         :else
@@ -91,19 +95,24 @@
      :body (str (h/html (log-page)))}
 
     (and
-      (= "/start" (:uri req))
+      (= "/start/north-america" (:uri req))
       (= :post (:request-method req)))
     (do
-      (log! :message "START")
-      #_(mob-start!)
+      (orch/mob-start! "ca-central")
+      {:status 200})
+
+    (and
+      (= "/start/europe" (:uri req))
+      (= :post (:request-method req)))
+    (do
+      (orch/mob-start! "eu-central")
       {:status 200})
 
     (and
       (= "/stop" (:uri req))
       (= :post (:request-method req)))
     (do
-      (log! :message "STOP")
-      #_(mob-stop!)
+      (orch/mob-stop!)
       {:status 200})))
 
 (defonce server (atom nil))
