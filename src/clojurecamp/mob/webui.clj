@@ -48,14 +48,24 @@
         [:button {:onclick "fetch('/stop', {method: 'POST'}).then(() => location.reload())"} "Stop"]
         :else
         "Doing stuff...")
+      [:hr]
       [:div
        [:pre (pr-str state)]]
+      [:hr]
       [:table
        [:tbody
         (for [[label status] progress]
           [:tr
            [:td (name label)]
            [:td (if status "✅" "❌")]])]]
+      [:hr]
+      (when-let [ip (:ip (meta progress))]
+        [:<>
+         [:div
+          [:a {:href "https://mob.clojure.camp"} "https://mob.clojure.camp"]
+          [:pre "=>"]
+          [:pre ip]]
+         [:hr]])
       [:div
        [:a {:href "/logs"} "logs"]]
       [:script

@@ -202,6 +202,7 @@
                                                    (= (str (:id instance)) (:description image)))))
                                        seq
                                        boolean)]
+    ^{:ip (first (:ipv4 dns-record))}
     [[:mob.progress/system-offline true]
      [:mob.progress/starting-server (or (= "booting" (:status instance))
                                         (= "provisioning" (:status instance)))]
