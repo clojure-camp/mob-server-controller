@@ -12,7 +12,7 @@
    [clojurecamp.mob.cloudflare :refer [cloudflare-get-dns-records
                                        cloudflare-create-dns-record!
                                        cloudflare-delete-dns-record!]]
-   [clojurecamp.mob.cron :refer [tick!]]
+   [clojurecamp.mob.cron :refer [schedule!]]
    [clojurecamp.mob.log :refer [log!]]))
 
 ;; these functions assume only one instance is running
@@ -311,4 +311,4 @@
   ;; starts "poller" job every 15s s
   ;; should run slower than every 5s
   ;; because may have race conditions with how progress and loop interacts
-  (tick! do-stuff! 15000))
+  (schedule! do-stuff! 15000))
