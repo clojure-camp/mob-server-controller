@@ -19,7 +19,7 @@
 
 (defn print-log []
   (->> (get-log)
-       (map #(select-keys % [:time :data]))
+       (map #(select-keys % [:time :event-type]))
        pprint/print-table))
 
 (defn clear-log! []
