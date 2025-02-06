@@ -2,31 +2,53 @@
   (:require
    [clojurecamp.mob.log :refer [log!]]))
 
-(def latest-future (atom nil))
+;; :cron/stopped
+;; :cron/running
+;; :cron/waiting-for-graceful-stop
+(defonce state (atom :cron/stopped))
+(defonce current-future (atom nil))
 
 (defn tick! [f t]
-  (try
-    (f)
-    (catch Exception e
-      (log! :exception nil (pr-str e))))
-  (reset! latest-future
-          ;; TODO should deref?
-          (future
-            (Thread/sleep t)
-            (tick! f t))))
+  (if (= @state :cron/waiting-for-graceful-stop)
+    (reset! state :cron/stopped)
+    (do
+      (try
+        (f)
+        (catch Exception e
+          (log! :exception nil (pr-str e))))
+      (reset! current-future
+              (future
+                (Thread/sleep t)
+                (tick! f t))))))
 
 (defn running? []
-  (boolean @latest-future))
+  (not= @state :cron/stopped))
 
 (defn schedule! [f t]
-  ;; only allow one "job" at a time
-  (when-not (running?)
-    (tick! f t)))
+  (if (= :cron/stopped @state)
+    (do
+      (reset! state :cron/running)
+      (reset! current-future
+              (future
+                (tick! f t))))
+    (throw (ex-info "Already running a job" {}))))
 
 (defn cancel! []
-  (when @latest-future
-    (future-cancel @latest-future)))
+  (when (= @state :cron/running)
+    ;; not cancelling directly
+    ;; setting state to nil will cause running tick!
+    ;; to stop itself next time
+    (reset! state :cron/waiting-for-graceful-stop)))
 
+#_(deref state)
 #_(running?)
 #_(cancel!)
+
+#_(future-cancel @current-future)
+
+#_(schedule! (fn []
+               (log! :test "test")
+               (Thread/sleep 5000)
+               (cancel!))
+             5000)
 

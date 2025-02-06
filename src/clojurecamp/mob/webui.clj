@@ -4,6 +4,7 @@
    [huff2.core :as h]
    [org.httpkit.server :as http]
    [clojurecamp.mob.log :refer [log! get-log]]
+   [clojurecamp.mob.cron :as cron]
    [clojurecamp.mob.orchestration :refer [mob-progress
                                           ->mob-state
                                           mob-can-start?
@@ -71,12 +72,16 @@
           [:pre ip]]
          [:hr]])
       [:div
+       [:pre
+        "cron running? " (pr-str (cron/running?))]]
+      [:hr]
+      [:div
        [:a {:href "/logs"} "logs"]]
-      [:script
-       ;; auto refresh page
-       (when (not (or (mob-can-start? state)
-                      (mob-can-stop? state)))
-         "setInterval(() => location.reload(), 15000);")]]]))
+      (when (cron/running?)
+        [:script
+         [:hiccup/raw-html
+          ;; auto refresh page
+          "setInterval(() => location.reload(), 15000);"]])]]))
 
 (defn handler [req]
   (cond
@@ -85,7 +90,7 @@
       (= :get (:request-method req)))
     {:status 200
      :headers {"Content-Type" "text/html; charset=utf-8"}
-     :body (str (h/html (main-page)))}
+     :body (str (h/html {:allow-raw true} (main-page)))}
 
     (and
       (= "/logs" (:uri req))

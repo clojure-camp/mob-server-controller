@@ -16,7 +16,6 @@
 
 
 (defn -main []
-  (orch/start-poller!)
   (webui/start-server!))
 
 (comment

@@ -12,7 +12,7 @@
    [clojurecamp.mob.cloudflare :refer [cloudflare-get-dns-records
                                        cloudflare-create-dns-record!
                                        cloudflare-delete-dns-record!]]
-   [clojurecamp.mob.cron :refer [schedule!]]
+   [clojurecamp.mob.cron :as cron]
    [clojurecamp.mob.log :refer [log!]]))
 
 ;; these functions assume only one instance is running
@@ -200,8 +200,10 @@
         dns-record (mob-get-dns-record)
         images (mob-images)
         images-to-delete (mob-images-to-delete)
-        ip-of-active-instance? (= (:content dns-record)
-                                  (first (:ipv4 instance)))
+        ip-of-active-instance? (and
+                                 dns-record
+                                 (= (:content dns-record)
+                                    (first (:ipv4 instance))))
         image-of-active-instance? (->> images
                                        (filter (fn [image]
                                                  (and
@@ -254,33 +256,10 @@
 
 #_(mob-state)
 
-(defn mob-can-start? [state]
-  (= :mob.progress/system-offline state))
-
-(defn mob-start! [region]
-  (log! :fn "mob-start!" {:region region})
-  (if (mob-can-start? (mob-state))
-    (mob-create-instance! region)
-    (log! :msg "(already starting)"))
-  ;; polling-logic! does the rest:
-  ;;   set dns ip
-  )
-
-(defn mob-can-stop? [state]
-  (= :mob.progress/system-online state))
-
-(defn mob-stop! []
-  (log! :fn "mob-stop!")
-  (if (mob-can-stop? (mob-state))
-    (mob-shutdown-instance!)
-    (log! :msg "(already stopping)"))
-  ;; polling-logic! does the rest:
-  ;;   stop server
-  ;;   create image
-  ;;   (wait 6+ min)
-  ;;   delete server
-  ;;   trim images
-  )
+(defn mob-stop-poller!
+  []
+  (log! :fn "mob-stop-poller!")
+  (cron/cancel!))
 
 (defn polling-logic! [p]
   (case (->mob-state p)
@@ -288,6 +267,8 @@
     ;; create-instance! is not here, because it is manually triggered
     :mob.progress/server-started
     (mob-set-dns-record-ip! (first (:ipv4 (mob-get-instance))))
+    :mob.progress/system-online
+    (mob-stop-poller!)
 
     ;; shutdown
     ;; shutdown-instance! is not here, because it is manually triggered
@@ -299,10 +280,13 @@
     (mob-trim-images!)
     :mob.progress/images-trimmed
     (mob-delete-instance!)
+    :mob.progress/system-offline
+    (mob-stop-poller!)
 
     nil))
 
-(defn do-stuff! []
+(defn polling-loop! []
+  (log! :fn "polling-loop!")
   (let [p (mob-progress)]
     (log! :state (->mob-state p))
     (polling-logic! p)))
@@ -311,4 +295,42 @@
   ;; starts "poller" job every 15s s
   ;; should run slower than every 5s
   ;; because may have race conditions with how progress and loop interacts
-  (schedule! do-stuff! 15000))
+  (log! :fn "start-poller!")
+  (cron/schedule! polling-loop! 15000))
+
+#_(start-poller!)
+
+(defn mob-can-start? [state]
+  (= :mob.progress/system-offline state))
+
+(defn mob-start! [region]
+  (log! :fn "mob-start!" {:region region})
+  (if (mob-can-start? (mob-state))
+    (do
+      (mob-create-instance! region)
+      (start-poller!))
+    (log! :msg "(already starting)"))
+  ;; polling-logic! does the rest:
+  ;;   set dns ip
+  )
+
+(defn mob-can-stop? [state]
+  (= :mob.progress/system-online state))
+
+(defn mob-stop! []
+  (log! :fn "mob-stop!")
+  (if (mob-can-stop? (mob-state))
+    (do
+      (mob-shutdown-instance!)
+      (start-poller!))
+    (log! :msg "(already stopping)"))
+  ;; polling-logic! does the rest:
+  ;;   stop server
+  ;;   create image
+  ;;   (wait 6+ min)
+  ;;   delete server
+  ;;   trim images
+  )
+
+
+
