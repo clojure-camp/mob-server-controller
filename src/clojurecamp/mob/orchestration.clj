@@ -10,7 +10,8 @@
                                    linode-delete-image!
                                    linode-get-disks]]
    [clojurecamp.mob.cloudflare :refer [cloudflare-get-dns-records
-                                       cloudflare-set-dns-record!]]
+                                       cloudflare-create-dns-record!
+                                       cloudflare-delete-dns-record!]]
    [clojurecamp.mob.cron :refer [tick!]]
    [clojurecamp.mob.log :refer [log!]]))
 
@@ -106,10 +107,18 @@
 
 (defn mob-set-dns-record-ip! [ip]
   (log! :fn "mob-set-dns-record-ip!" {:ip ip})
-  (cloudflare-set-dns-record! (:id (mob-get-dns-record))
-                              ip))
+  (cloudflare-create-dns-record! {:content ip
+                                  :name "mob.clojure.camp"
+                                  :proxied true
+                                  :type "A"}))
 
 #_(mob-set-dns-record-ip! "139.177.194.5")
+
+(defn mob-delete-dns-record! []
+  (log! :fn "mob-delete-dns-record!")
+  (cloudflare-delete-dns-record! (:id (mob-get-dns-record))))
+
+#_(mob-delete-dns-record!)
 
 ;; mob state machine -------
 
@@ -214,6 +223,9 @@
      ;; -------
      [:mob.progress/stopping-server (= "shutting_down" (:status instance))]
      [:mob.progress/server-stopped (= "offline" (:status instance))]
+     [:mob.progress/ip-reset (and
+                               (= "offline" (:status instance))
+                               (nil? dns-record))]
      [:mob.progress/creating-image (->> images
                                         (some (fn [image]
                                                 (= "creating" (:status image))))
@@ -280,6 +292,8 @@
     ;; shutdown
     ;; shutdown-instance! is not here, because it is manually triggered
     :mob.progress/server-stopped
+    (mob-delete-dns-record!)
+    :mob.progress/ip-reset
     (mob-imagize-disk!)
     :mob.progress/image-created
     (mob-trim-images!)

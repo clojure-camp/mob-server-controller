@@ -30,11 +30,16 @@
 
 #_(cloudflare-get-dns-records)
 
-(defn cloudflare-set-dns-record!
-  [record-id ip]
-  (->> (cloudflare-request {:method :patch
-                            :url (str "/zones/" (config :cloudflare-zone-id) "/dns_records/" record-id)
-                            :body {:content ip}})
+(defn cloudflare-create-dns-record!
+  [{:keys [content name proxied type] :as opts}]
+  ;; https://developers.cloudflare.com/api/resources/dns/subresources/records/methods/create/
+  (->> (cloudflare-request {:method :post
+                            :url (str "/zones/" (config :cloudflare-zone-id) "/dns_records")
+                            :body opts})
+       #_:result))
+
+(defn cloudflare-delete-dns-record!
+  [record-id]
+  (->> (cloudflare-request {:method :delete
+                            :url (str "/zones/" (config :cloudflare-zone-id) "/dns_records/" record-id)})
        :result))
-
-
