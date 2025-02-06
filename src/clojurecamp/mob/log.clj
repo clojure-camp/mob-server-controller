@@ -10,9 +10,11 @@
                                :event-type event-type
                                :main-info main-info
                                :extra-info extra-info}) "\n"))))
+
 (defn get-log []
   (->> (slurp "log.txt")
        str/split-lines
+       (remove str/blank?)
        (map read-string)))
 
 (defn print-log []
@@ -21,7 +23,7 @@
        pprint/print-table))
 
 (defn clear-log! []
-  (spit "log.txt" ""))
+  (spit "log.txt" "\n"))
 
 #_(clear-log!)
 #_(print-log)
