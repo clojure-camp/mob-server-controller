@@ -125,7 +125,10 @@
 (defn start-server! []
   (when @server
     (@server))
-  (reset! server (http/run-server #'handler {:port 9624})))
+  (reset! server (http/run-server #'handler {:port
+                                             (or (some-> (System/getenv "PORT")
+                                                         parse-long)
+                                                 9624)})))
 
 #_(start-server!)
 
