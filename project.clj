@@ -4,4 +4,5 @@
                  [cheshire "5.13.0"]
                  [io.github.escherize/huff "0.2.12"]]
   :main clojurecamp.mob.core
-  :profiles {:dev {:repl-options {:init-ns clojurecamp.mob.core}}})
+  :profiles {:uberjar {:aot :all}
+             :dev {:repl-options {:init-ns clojurecamp.mob.core}}})
