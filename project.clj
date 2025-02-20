@@ -2,6 +2,8 @@
   :dependencies [[org.clojure/clojure "1.12.0"]
                  [http-kit "2.8.0"]
                  [cheshire "5.13.0"]
+                 [ring-oauth2 "0.3.0"]
+                 [ring/ring-defaults "0.5.0"]
                  [io.github.escherize/huff "0.2.12"]]
   :main clojurecamp.mob.core
   :profiles {:uberjar {:aot :all}

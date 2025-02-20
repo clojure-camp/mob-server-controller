@@ -3,6 +3,10 @@
    [clojure.pprint :as pprint]
    [huff2.core :as h]
    [org.httpkit.server :as http]
+   [ring.middleware.defaults :as rmd]
+   [ring.middleware.oauth2 :as oauth]
+   [clojurecamp.mob.github :as github]
+   [clojurecamp.mob.config :as config]
    [clojurecamp.mob.log :refer [log! get-log]]
    [clojurecamp.mob.cron :as cron]
    [clojurecamp.mob.orchestration :refer [mob-progress
@@ -83,6 +87,43 @@
           ;; auto refresh page
           "setInterval(() => location.reload(), 15000);"]])]]))
 
+(def oauth-launch-uri "/oauth/github")
+(def oauth-redirect-uri "/oauth/github/callback")
+(def oauth-landing-uri "/oauth/github/post-auth")
+
+(defn wrap-auth [handler]
+  (fn [req]
+    (cond
+      ;; post-auth url => convert oauth token to our own session
+      (and
+        (= oauth-landing-uri (:uri req))
+        (= :get (:request-method req)))
+      (let [token (get-in req [:session ::oauth/access-tokens :github :token])
+            email (github/get-email token)]
+        (if (contains? (config/config :email-allowlist) email)
+          {:status 302
+           :session {:email email}
+           :headers {"Location" "/"}}
+          {:status 401
+           :body "Unauthorized"}))
+      ;; logged in? => handle request
+      (get-in req [:session :email])
+      (handler req)
+      ;; home page (not logged in) => show login link
+      (and
+        (= "/" (:uri req))
+        (= :get (:request-method req)))
+      {:status 200
+       :headers {"Content-Type" "text/html; charset=utf-8"}
+       :body (str (h/html [:html
+                           [:body
+                            [:a {:href oauth-launch-uri}
+                             "Log In"]]]))}
+      ;; otherwise, all routes unauthorized
+      :else
+      {:status 401
+       :body "Unauthorized"})))
+
 (defn handler [req]
   (cond
     (and
@@ -120,15 +161,33 @@
       (orch/mob-stop!)
       {:status 200})))
 
+(def app
+  (-> handler
+      wrap-auth
+      (oauth/wrap-oauth2 {:github
+                          {:authorize-uri    "https://github.com/login/oauth/authorize"
+                           :access-token-uri "https://github.com/login/oauth/access_token"
+                           :client-id        (config/config :github-oauth-client-id)
+                           :client-secret    (config/config :github-oauth-client-secret)
+                           :scopes           ["user:email"]
+                           :launch-uri       oauth-launch-uri
+                           :redirect-uri     oauth-redirect-uri
+                           :landing-uri      oauth-landing-uri}})
+      (rmd/wrap-defaults
+       (-> rmd/site-defaults
+           ;; our oauth2 library requires lax (instead of strict), due to setting state in the session
+           (assoc-in [:session :cookie-attrs :same-site] :lax)
+           (assoc-in [:session :cookie-name] "clojure-camp-mob-control")))))
+
 (defonce server (atom nil))
 
 (defn start-server! []
   (when @server
     (@server))
-  (reset! server (http/run-server #'handler {:port
-                                             (or (some-> (System/getenv "PORT")
-                                                         parse-long)
-                                                 9624)})))
+  (reset! server (http/run-server #'app {:port
+                                         (or (some-> (System/getenv "PORT")
+                                                     parse-long)
+                                             9624)})))
 
 #_(start-server!)
 
