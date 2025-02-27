@@ -177,6 +177,9 @@
        (-> rmd/site-defaults
            ;; our oauth2 library requires lax (instead of strict), due to setting state in the session
            (assoc-in [:session :cookie-attrs :same-site] :lax)
+           ;; same-site is sufficient to deal with csrf risks
+           (assoc-in [:security :anti-forgery] false)
+           ;; we're not going to bother with a persistent cookie store
            (assoc-in [:session :cookie-name] "clojure-camp-mob-control")))))
 
 (defonce server (atom nil))
