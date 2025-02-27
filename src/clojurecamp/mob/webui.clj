@@ -177,6 +177,7 @@
        (-> (if (= :prod (config/config :environment))
              rmd/secure-site-defaults
              rmd/site-defaults)
+           (assoc-in [:proxy] (= :prod (config/config :environment)))
            ;; our oauth2 library requires lax (instead of strict), due to setting state in the session
            (assoc-in [:session :cookie-attrs :same-site] :lax)
            ;; same-site is sufficient to deal with csrf risks
