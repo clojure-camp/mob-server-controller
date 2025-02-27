@@ -174,7 +174,9 @@
                            :redirect-uri     oauth-redirect-uri
                            :landing-uri      oauth-landing-uri}})
       (rmd/wrap-defaults
-       (-> rmd/site-defaults
+       (-> (if (= :prod (config/config :environment))
+             rmd/secure-site-defaults
+             rmd/site-defaults)
            ;; our oauth2 library requires lax (instead of strict), due to setting state in the session
            (assoc-in [:session :cookie-attrs :same-site] :lax)
            ;; same-site is sufficient to deal with csrf risks
