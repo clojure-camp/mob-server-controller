@@ -301,28 +301,39 @@
 #_(start-poller!)
 
 (defn mob-can-start? [state]
-  (= :mob.progress/system-offline state))
+  (and
+    ;; if cron is running, we are already starting or stopping
+    ;; required to prevent double submissions
+    (not (cron/running?))
+    (= :mob.progress/system-offline state)))
 
 (defn mob-start! [region]
   (log! :fn "mob-start!" {:region region})
   (if (mob-can-start? (mob-state))
     (do
-      (mob-create-instance! region)
-      (start-poller!))
+      ;; start poller first, so that it's state can be used
+      ;; to prevent double submissions
+      (start-poller!)
+      (mob-create-instance! region))
     (log! :msg "(already starting)"))
   ;; polling-logic! does the rest:
   ;;   set dns ip
   )
 
 (defn mob-can-stop? [state]
-  (= :mob.progress/system-online state))
+  (and
+    ;; if cron is running, we are already starting or stopping
+    ;; (not a big deal to trigger stopping while stopping)
+    ;; (but 'slightly more correct')
+    (not (cron/running?))
+    (= :mob.progress/system-online state)))
 
 (defn mob-stop! []
   (log! :fn "mob-stop!")
   (if (mob-can-stop? (mob-state))
     (do
-      (mob-shutdown-instance!)
-      (start-poller!))
+      (start-poller!)
+      (mob-shutdown-instance!))
     (log! :msg "(already stopping)"))
   ;; polling-logic! does the rest:
   ;;   stop server
@@ -331,6 +342,4 @@
   ;;   delete server
   ;;   trim images
   )
-
-
 
