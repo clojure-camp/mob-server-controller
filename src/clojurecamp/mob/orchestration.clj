@@ -271,7 +271,8 @@
     :mob.progress/server-started
     (mob-set-dns-record-ip! (first (:ipv4 (mob-get-instance))))
     :mob.progress/system-online
-    (mob-stop-poller!)
+    (do (mob-stop-poller!)
+        (reset! active? false))
 
     ;; shutdown
     ;; shutdown-instance! is not here, because it is manually triggered
@@ -284,7 +285,8 @@
     :mob.progress/images-trimmed
     (mob-delete-instance!)
     :mob.progress/system-offline
-    (mob-stop-poller!)
+    (do (mob-stop-poller!)
+        (reset! active? false))
 
     nil))
 
