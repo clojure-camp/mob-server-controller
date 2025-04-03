@@ -73,7 +73,7 @@
          [:div
           [:a {:href "https://mob.clojure.camp"} "https://mob.clojure.camp"]
           [:pre "=>"]
-          [:pre ip]]
+          [:a {:href ip} (str "http://" ip)]]
          [:hr]])
       [:div
        [:pre
