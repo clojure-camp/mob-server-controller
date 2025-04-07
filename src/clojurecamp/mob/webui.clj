@@ -49,10 +49,9 @@
      [:body
       (cond
         (mob-can-start? state)
-        [:<>
-         [:button {:onclick "fetch('/start/north-america', {method: 'POST'}).then(() => location.reload())"} "Start (in North America)"]
-         [:br]
-         [:button {:onclick "fetch('/start/europe', {method: 'POST'}).then(() => location.reload())"} "Start (in Europe)"]]
+        (for [[region-id label] (config/config :linode-regions)]
+          [:div
+           [:button {:onclick (str "fetch('/start?region=" region-id "', {method: 'POST'}).then(() => location.reload())")} "Start (in " label ")"]])
         (mob-can-stop? state)
         [:button {:onclick "fetch('/stop', {method: 'POST'}).then(() => location.reload())"} "Stop"]
         :else
@@ -141,18 +140,14 @@
      :body (str (h/html (log-page)))}
 
     (and
-      (= "/start/north-america" (:uri req))
+      (= "/start" (:uri req))
       (= :post (:request-method req)))
-    (do
-      (orch/mob-start! "ca-central")
-      {:status 200})
-
-    (and
-      (= "/start/europe" (:uri req))
-      (= :post (:request-method req)))
-    (do
-      (orch/mob-start! "eu-central")
-      {:status 200})
+    (let [region (get-in req [:params :region])]
+      ;; only allow allow-listed regions
+      (if (contains? (config/config :linode-regions) region)
+        (do (orch/mob-start! region)
+            {:status 200})
+        {:status 400}))
 
     (and
       (= "/stop" (:uri req))
